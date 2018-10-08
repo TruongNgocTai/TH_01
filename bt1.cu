@@ -155,24 +155,26 @@ void compare2Pnms(char * fileName1, char * fileName2)
 void convertRgb2GrayByHost(uint8_t * inPixels, uint8_t * outPixels, int width, int height)
 {
 	// TODO
-	int grayImg_size = width * height;
+	int size = width * height;
 
-	for(int i = 0; i < grayImg_size; i++){
-		outPixels[i] = 0.299 * inPixels[i] + 0.587 * inPixels[i + grayImg_size] + 0.114 * inPixels[i + 2 * grayImg_size];
+	for(int i = 0; i < size; i++){
+		outPixels[i] = 0.299 * inPixels[i*3] +
+						 0.114 * inPixels[i*3 + 2] + 
+						 0.587 * inPixels[i*3 + 1];
 	}
 }
 
 __global__ void convertRgb2GrayByDevice(uint8_t * inPixels, uint8_t * outPixels, int width, int height)
 {
 	// TODO
-	int grayImg_size = width * height;
 	int i_r = blockIdx.y * blockDim.y + threadIdx.y;
-	int i_c = blockIdx.x * blockDim.y + threadIdx.x;
+	int i_c = blockIdx.x * blockDim.x + threadIdx.x;
 
-	outPixels[i_r * width + i_c] = 0.299 * inPixels[i_r * width + i_c] + 
-									0.587 * inPixels[i_r * width + i_c + grayImg_size] + 
-									0.114 * inPixels[i_r * width + i_c + 2 * grayImg_size];
-
+	if(i_c < width && i_r < height){
+		outPixels[i_r * width + i_c] = 0.299 * inPixels[(i_r * width + i_c)*3] + 
+										0.114 * inPixels[(i_r * width + i_c)*3 + 2] + 
+										0.587 * inPixels[(i_r * width + i_c)*3 + 1];
+	}
 }
 
 
@@ -189,23 +191,28 @@ int main(int argc, char ** argv)
 	uint8_t * inPixels;
 	readPnm(argv[1], numChannels, width, height, inPixels);
 	printf("Image size (width x height): %i x %i\n", width, height);
-
 	// -----PROCESS INPUT DATA-----
 	uint8_t * outPixels= (uint8_t *)malloc(width * height);
 	GpuTimer timer;
     timer.Start();
-	if (strcmp(argv[4], "cpu") == 0) // Use CPU
+	if (strcmp(argv[4], "cpu") == 0){ // Use CPU
 		convertRgb2GrayByHost(inPixels, outPixels, width, height);
+	}
 	else // Use GPU
 	{
 		// TODO: Query and print GPU name and compute capability
-		
+		cudaDeviceProp prop;
+		printf("GPU name: %s\n", prop.name);
+		printf("GPU compute capability: %d\n", prop.major);
+		printf("GPU compute capability: %d\n", prop.minor);
 
 		// TODO: Allocate device memories
-		
+		uint8_t *d_inPixels, *d_outPixels;
+		CHECK(cudaMalloc(&d_inPixels, width * height * numChannels));
+		CHECK(cudaMalloc(&d_outPixels, width * height));
 
 		// TODO: Copy data to device memories
-
+		CHECK(cudaMemcpy(d_inPixels, inPixels, width * height * numChannels, cudaMemcpyHostToDevice));
 
 		// TODO: Set block size (already done for you) and grid size,
 		//       and invoke kernel function with these settings (remember to check kernel error)
@@ -215,13 +222,15 @@ int main(int argc, char ** argv)
 			blockSize.x = atoi(argv[5]);
 			blockSize.y = atoi(argv[6]);
 		}
-			
+		dim3 gridSize(16, 16);
+		convertRgb2GrayByDevice<<<gridSize, blockSize>>>(d_inPixels, d_outPixels, width, height);
 
 		// TODO: Copy result from device memories
-		
+		CHECK(cudaMemcpy(outPixels, d_outPixels, width * height, cudaMemcpyDeviceToHost));
 
 		// TODO: Free device memories
-		
+		cudaFree(d_inPixels);
+		cudaFree(d_outPixels);
 	}
 	timer.Stop();
     float time = timer.Elapsed();
