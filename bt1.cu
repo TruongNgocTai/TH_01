@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <cuda.h>
 
 #define CHECK(call)                                                            \
 {                                                                              \
@@ -202,9 +203,10 @@ int main(int argc, char ** argv)
 	{
 		// TODO: Query and print GPU name and compute capability
 		cudaDeviceProp prop;
+		CHECK(cudaGetDeviceProperties(&prop, 0));
+
 		printf("GPU name: %s\n", prop.name);
 		printf("GPU compute capability: %d\n", prop.major);
-		printf("GPU compute capability: %d\n", prop.minor);
 
 		// TODO: Allocate device memories
 		uint8_t *d_inPixels, *d_outPixels;
@@ -222,7 +224,10 @@ int main(int argc, char ** argv)
 			blockSize.x = atoi(argv[5]);
 			blockSize.y = atoi(argv[6]);
 		}
-		dim3 gridSize(16, 16);
+		dim3 gridSize((width-1)/blockSize.x + 1, (height-1)/blockSize.y + 1);
+		printf("Block size: %d x %d\n", blockSize.x, blockSize.y);
+		printf("Grid size: %d x %d\n", gridSize.x, gridSize.y);
+
 		convertRgb2GrayByDevice<<<gridSize, blockSize>>>(d_inPixels, d_outPixels, width, height);
 
 		// TODO: Copy result from device memories
